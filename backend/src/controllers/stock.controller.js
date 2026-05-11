@@ -14,52 +14,112 @@ const DEFAULT_STOCKS = [
     'ANGELONE', 'ANANDRATHI', 'CAMS'
 ]; // yh default stocks array 
 
+const { wrapper } = require("axios-cookiejar-support");
+const { CookieJar } = require("tough-cookie");
 const dataURL = process.env.DATA_FETCH_URL;
 
 // Function to fetch data from NSE archives for a specific date 
+// const fetchAndProcessData = async (date) => {
+//     const url = dataURL.replace('{{DATE}}', date);
+//     try {
+//         await axios.get("https://www.nseindia.com", {
+//             headers: {
+//                 "User-Agent":
+//                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+//             },
+//         });
+//         // const response = await axios.get(url, { responseType: 'stream' });
+//         const response = await axios.get(url, {
+//             headers: {
+//                 "User-Agent":
+//                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+//                 Accept: "application/json, text/plain, */*",
+//                 Referer: "https://www.nseindia.com/",
+//                 Origin: "https://www.nseindia.com",
+//             },
+//         });
+//         const results = [];
+//         return new Promise((resolve, reject) => {
+//             response.data
+//                 .pipe(csv())
+//                 .on('data', (data) => results.push(data))
+//                 .on('end', () => resolve(results))
+//                 .on('error', (err) => {
+//                     // Handle CSV parsing errors
+//                     console.error('CSV parsing error:', err.message);
+//                     reject(new Error('Failed to parse CSV data.'));
+//                 });
+//         });
+//     } catch (err) {
+//         // Handle Axios network errors, like 404 (Not Found)
+//         if (err.response && err.response.status === 404) {
+//             console.error(`Data not found for date ${date}: 404 Not Found`);
+//             throw new Error(`Data not available for date ${date}.`);
+//         } else {
+//             console.error('Error fetching data:', err.message);
+//             throw new Error(`Failed to fetch data from NSE: ${err.message}`);
+//         }
+//     }
+// };
+
+
 const fetchAndProcessData = async (date) => {
     const url = dataURL.replace('{{DATE}}', date);
+
     try {
-        await axios.get("https://www.nseindia.com", {
+        const jar = new CookieJar();
+
+        const client = wrapper(
+            axios.create({
+                jar,
+                withCredentials: true,
+            })
+        );
+
+        // First request for cookies
+        await client.get("https://www.nseindia.com", {
             headers: {
                 "User-Agent":
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                Accept:
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             },
         });
-        // const response = await axios.get(url, { responseType: 'stream' });
-        const response = await axios.get(url, {
+
+        // Actual CSV request
+        const response = await client.get(url, {
+            responseType: "stream",
             headers: {
                 "User-Agent":
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                Accept: "application/json, text/plain, */*",
                 Referer: "https://www.nseindia.com/",
-                Origin: "https://www.nseindia.com",
+                Accept: "*/*",
             },
         });
+
         const results = [];
+
         return new Promise((resolve, reject) => {
             response.data
                 .pipe(csv())
-                .on('data', (data) => results.push(data))
-                .on('end', () => resolve(results))
-                .on('error', (err) => {
-                    // Handle CSV parsing errors
-                    console.error('CSV parsing error:', err.message);
-                    reject(new Error('Failed to parse CSV data.'));
+                .on("data", (data) => results.push(data))
+                .on("end", () => resolve(results))
+                .on("error", (err) => {
+                    console.error("CSV parsing error:", err.message);
+                    reject(new Error("Failed to parse CSV data."));
                 });
         });
+
     } catch (err) {
-        // Handle Axios network errors, like 404 (Not Found)
+        console.error("FULL ERROR:", err.response?.status, err.message);
+
         if (err.response && err.response.status === 404) {
-            console.error(`Data not found for date ${date}: 404 Not Found`);
             throw new Error(`Data not available for date ${date}.`);
         } else {
-            console.error('Error fetching data:', err.message);
             throw new Error(`Failed to fetch data from NSE: ${err.message}`);
         }
     }
 };
-
 // Helper function to safely parse CSV fields
 const parseField = (row, fieldName, type = 'float') => {
     // Aas-paas ke spaces trim karke key dhoondo
